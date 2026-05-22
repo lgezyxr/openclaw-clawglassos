@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+
+# Local IDE / editor scratch
+.vscode/
+.idea/
+*.swp
+
+# Local config that may carry tokens
+.env
+.env.local
+.env.*.local

@@ -1,0 +1,61 @@
+{
+  "id": "clawglassos",
+  "kind": "channel",
+  "channels": ["clawglassos"],
+  "name": "ClawGlassOS (Even G2)",
+  "description": "Community plugin: bridges Even Realities G2 smart glasses (via the ClawGlassOS WebView) to OpenClaw as a chat channel.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "channelConfigs": {
+    "clawglassos": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["token"],
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Shared secret the WebView must present in the `?token=` query string when opening the WebSocket."
+          },
+          "host": {
+            "type": "string",
+            "default": "0.0.0.0",
+            "description": "Network interface to bind the WebSocket server to."
+          },
+          "port": {
+            "type": "integer",
+            "default": 8787,
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "path": {
+            "type": "string",
+            "default": "/ws"
+          },
+          "allowFrom": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": [],
+            "description": "Stable identity allowlist for DMs. Each entry is a device ID (returned by the WebView in its `hello` frame)."
+          },
+          "dmSecurity": {
+            "type": "string",
+            "enum": ["open", "allowlist", "pairing"],
+            "default": "allowlist"
+          }
+        }
+      },
+      "uiHints": {
+        "token": {
+          "label": "Shared token",
+          "sensitive": true
+        },
+        "port": { "label": "WebSocket port" },
+        "path": { "label": "WebSocket path" }
+      }
+    }
+  }
+}

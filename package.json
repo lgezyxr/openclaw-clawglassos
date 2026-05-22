@@ -1,0 +1,42 @@
+{
+  "name": "openclaw-clawglassos",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Community OpenClaw channel plugin for ClawGlassOS — bridges Even Realities G2 smart glasses (via the ClawGlassOS WebView) to the OpenClaw gateway.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "openclaw.plugin.json",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "clean": "rimraf dist"
+  },
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "channel": {
+      "id": "clawglassos",
+      "label": "ClawGlassOS (Even G2)",
+      "blurb": "Bridges Even Realities G2 smart glasses (via the ClawGlassOS WebView) to OpenClaw as a chat channel."
+    }
+  },
+  "peerDependencies": {
+    "openclaw": "*"
+  },
+  "dependencies": {
+    "openclaw": "link:../../../openclaw",
+    "ws": "^8.20.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "@types/ws": "^8.5.10",
+    "rimraf": "^5.0.5",
+    "typescript": "^5.4.0"
+  }
+}
