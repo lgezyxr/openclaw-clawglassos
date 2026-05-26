@@ -210,18 +210,25 @@ export async function dispatchToOpenClaw(
   //    Mirrors what extensions/discord does with Discord typing
   //    (src/channels/typing.ts: 3s keepalive). We don't have a server-side TTL
   //    primitive like Discord typing, so the frontend implements the TTL.
-  ctx.registry.send(msg.deviceId, { type: 'status', text: 'processing' })
-  const PROCESSING_HEARTBEAT_MS = 3_000
-  const heartbeat = setInterval(() => {
-    ctx.registry.send(msg.deviceId, { type: 'status', text: 'processing' })
-  }, PROCESSING_HEARTBEAT_MS)
-
   // Register an AbortController so the {type:'cancel'} frame handler can
   // stop this turn mid-flight. The SDK plumbs replyOptions.abortSignal into
   // the model client and tool fetches (web_search etc), so .abort() actually
   // cancels upstream HTTP, not just our local listener.
   const abortController = new AbortController()
   ctx.registry.registerInflight(msg.deviceId, msg.streamId, abortController)
+
+  ctx.registry.send(msg.deviceId, { type: 'status', text: 'processing' })
+  const PROCESSING_HEARTBEAT_MS = 3_000
+  const heartbeat = setInterval(() => {
+    // Once the turn is aborted, stop heartbeating. The model + tools may
+    // take a few hundred ms to actually wind down their HTTP, during which
+    // runPrepared hasn't resolved and `finally` hasn't run clearInterval
+    // yet — without this guard the next 3s tick fires a {status:'processing'}
+    // AFTER the client already saw {status:'cancelled'}, which bounces the
+    // glasses UI back into the spinner. (Reported as "取消不了".)
+    if (abortController.signal.aborted) return
+    ctx.registry.send(msg.deviceId, { type: 'status', text: 'processing' })
+  }, PROCESSING_HEARTBEAT_MS)
 
   try {
     await runtime.turn.runPrepared({
