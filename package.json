@@ -1,6 +1,6 @@
 {
   "name": "openclaw-clawglassos",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Community OpenClaw channel plugin for ClawGlassOS — bridges Even Realities G2 smart glasses (via the ClawGlassOS WebView) to the OpenClaw gateway.",
   "license": "MIT",
   "repository": {
@@ -59,7 +59,7 @@
   "devDependencies": {
     "@types/node": "^20.11.30",
     "@types/ws": "^8.5.10",
-    "openclaw": "link:../../../openclaw",
+    "openclaw": ">=2026.5.21",
     "rimraf": "^5.0.5",
     "typescript": "^5.4.0"
   }
