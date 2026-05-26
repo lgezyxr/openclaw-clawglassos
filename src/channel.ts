@@ -44,7 +44,12 @@ export function buildChannelPlugin({ registry }: BuildOptions) {
       accountId: accountId ?? null,
       token: section.token,
       allowFrom: section.allowFrom ?? [],
-      dmPolicy: section.dmSecurity,
+      // `dmPolicy` is the canonical key (matches the SDK). `dmSecurity` is
+      // a deprecated alias kept for 0.1.x configs — if both are set,
+      // dmPolicy wins. Earlier versions ONLY read dmSecurity, which broke
+      // configs that wrote dmPolicy directly (the SDK saw undefined and
+      // fell back to "allowlist" + an empty allowFrom rejected every DM).
+      dmPolicy: section.dmPolicy ?? section.dmSecurity,
     }
   }
 
@@ -175,13 +180,13 @@ export function buildChannelPlugin({ registry }: BuildOptions) {
 
     // The glasses are a single-user device. DM only.
     //
-    // SDK gotcha: `dmSecurity: "open"` does NOT mean "admit everyone". The
+    // SDK gotcha: `dmPolicy: "open"` does NOT mean "admit everyone". The
     // OpenClaw ingress runtime still runs the allowlist gate, so an empty
     // allowFrom blocks all senders with reasonCode=dm_policy_not_allowlisted.
     // To truly admit any deviceId you must either:
     //   - set `allowFrom: ["*"]` (wildcard), or
     //   - put the deviceId(s) you care about into allowFrom explicitly
-    //     (and leave dmSecurity at "allowlist" -- behaviour is identical).
+    //     (and leave dmPolicy at "allowlist" -- behaviour is identical).
     security: {
       dm: {
         channelKey: 'clawglassos',

@@ -41,10 +41,16 @@
             "default": [],
             "description": "Stable identity allowlist for DMs. Each entry is a device ID (returned by the WebView in its `hello` frame)."
           },
+          "dmPolicy": {
+            "type": "string",
+            "enum": ["open", "allowlist", "pairing", "disabled"],
+            "default": "allowlist",
+            "description": "Who can DM the bot. `open` admits everyone; `allowlist` requires the deviceId in `allowFrom`; `pairing` runs the SDK pairing handshake; `disabled` rejects all DMs."
+          },
           "dmSecurity": {
             "type": "string",
-            "enum": ["open", "allowlist", "pairing"],
-            "default": "allowlist"
+            "enum": ["open", "allowlist", "pairing", "disabled"],
+            "description": "Deprecated alias for `dmPolicy`. Kept for back-compat with 0.1.x configs; new configs should use `dmPolicy` directly."
           },
           "stt": {
             "type": "object",
@@ -79,6 +85,7 @@
         },
         "port": { "label": "WebSocket port" },
         "path": { "label": "WebSocket path" },
+        "dmPolicy": { "label": "DM policy" },
         "stt.azure.apiKey": { "sensitive": true }
       }
     }
