@@ -1,8 +1,10 @@
 // Minimal WS probe — mimics the glasses webview client.
-// Usage: node tools/probe-ws.mjs
+// Usage: CGOS_HOST=<host> CGOS_TOKEN=<token> node tools/probe-ws.mjs
 import WebSocket from "ws";
 
-const URL = "ws://127.0.0.1:8787/ws?token=dev-token-changeme";
+const HOST = process.env.CGOS_HOST ?? "127.0.0.1";
+const TOKEN = process.env.CGOS_TOKEN ?? "CHANGE_ME";
+const URL = process.env.CGOS_WS_URL ?? `ws://${HOST}:8787/ws?token=${TOKEN}`;
 const DEVICE_ID = "probe-device-01";
 
 const ws = new WebSocket(URL);

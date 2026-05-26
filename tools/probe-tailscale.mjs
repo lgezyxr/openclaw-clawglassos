@@ -1,5 +1,7 @@
 import WebSocket from "ws";
-const URL = "ws://100.115.214.56:8787/ws?token=dev-token-changeme";
+const HOST = process.env.CGOS_HOST ?? "127.0.0.1";
+const TOKEN = process.env.CGOS_TOKEN ?? "CHANGE_ME";
+const URL = process.env.CGOS_WS_URL ?? `ws://${HOST}:8787/ws?token=${TOKEN}`;
 const ws = new WebSocket(URL);
 const t0 = Date.now();
 const log = (...a) => console.log(`[+${((Date.now()-t0)/1000).toFixed(1)}s]`, ...a);

@@ -11,11 +11,14 @@
 //        - no {type:'reply'} after the cancel
 //        - heartbeats stop within ~3s
 //
-// Run: node openclaw-clawglassos/tools/cancel-probe.mjs
+// Run: CGOS_HOST=<host> CGOS_TOKEN=<token> node openclaw-clawglassos/tools/cancel-probe.mjs
 
 import WebSocket from "ws";
 
-const URL = "ws://100.115.214.56:8787/ws?token=dev-token-changeme";
+const HOST = process.env.CGOS_HOST ?? "127.0.0.1";
+const TOKEN = process.env.CGOS_TOKEN ?? "CHANGE_ME";
+const URL =
+  process.env.CGOS_WS_URL ?? `ws://${HOST}:8787/ws?token=${TOKEN}`;
 const DEVICE = "probe-cancel-01";
 const STREAM = "stream-cancel-" + Math.random().toString(36).slice(2, 8);
 const QUESTION =
