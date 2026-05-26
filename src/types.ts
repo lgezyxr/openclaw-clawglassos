@@ -45,6 +45,17 @@ export type InboundFrame =
    * render it like a voice turn.
    */
   | { type: 'voice'; text: string; lang?: string; streamId?: string }
+  /**
+   * Cancel a turn currently being processed by OpenClaw. The client sends
+   * this when the user double-taps out of the 'processing' (thinking) state.
+   * The plugin matches it to a registered AbortController by streamId and
+   * fires .abort(), which propagates through replyOptions.abortSignal into
+   * the model client and any in-flight tool calls (notably web_search).
+   *
+   * We key on streamId (not deviceId) so a fast "record → cancel → record
+   * again" sequence doesn't kill the wrong turn.
+   */
+  | { type: 'cancel'; streamId: string }
   | { type: 'ping' }
 
 /** Outbound frames we send to the WebView. */
@@ -65,6 +76,18 @@ export type OutboundFrame =
 /** Connection registry. Singleton per plugin instance. */
 export class ConnectionRegistry {
   private byDevice = new Map<DeviceId, GlassesConnection>()
+  /**
+   * In-flight AbortControllers keyed by `${deviceId}:${streamId}`. A turn
+   * registers itself here at dispatch start and unregisters in `finally`.
+   * The {type:'cancel'} frame handler looks up the entry and fires .abort();
+   * the abort signal is wired through replyOptions.abortSignal → SDK →
+   * model client + tools, so the model actually stops burning tokens.
+   *
+   * Keyed by streamId (not just deviceId) to avoid the race where a user
+   * cancels then immediately re-records: the late cancel for the dead
+   * stream must not kill the fresh one.
+   */
+  private inflightByStream = new Map<string, AbortController>()
 
   register(conn: GlassesConnection): void {
     const existing = this.byDevice.get(conn.deviceId)
@@ -83,6 +106,9 @@ export class ConnectionRegistry {
     const existing = this.byDevice.get(deviceId)
     if (existing && existing.ws === ws) {
       this.byDevice.delete(deviceId)
+      // Also abort any in-flight turns this device owned. The WS is gone
+      // so we couldn't deliver the reply anyway; better to stop billing.
+      this.abortAllForDevice(deviceId, 'device disconnected')
     }
   }
 
@@ -101,6 +127,57 @@ export class ConnectionRegistry {
     return Array.from(this.byDevice.values())
   }
 
+  // ── In-flight turn tracking ─────────────────────────────────────────
+
+  private inflightKey(deviceId: DeviceId, streamId: string): string {
+    return `${deviceId}:${streamId}`
+  }
+
+  /** Called by dispatchToOpenClaw at the top of the turn. */
+  registerInflight(
+    deviceId: DeviceId,
+    streamId: string,
+    controller: AbortController,
+  ): void {
+    this.inflightByStream.set(this.inflightKey(deviceId, streamId), controller)
+  }
+
+  /** Called by dispatchToOpenClaw in `finally`. Idempotent. */
+  clearInflight(deviceId: DeviceId, streamId: string): void {
+    this.inflightByStream.delete(this.inflightKey(deviceId, streamId))
+  }
+
+  /**
+   * Look up an in-flight turn by streamId and abort it.
+   * Returns true if a matching controller was found.
+   */
+  abortInflight(deviceId: DeviceId, streamId: string, reason?: string): boolean {
+    const key = this.inflightKey(deviceId, streamId)
+    const controller = this.inflightByStream.get(key)
+    if (!controller) return false
+    try {
+      controller.abort(reason)
+    } catch {
+      // AbortController.abort is non-throwing in practice; guard for safety.
+    }
+    this.inflightByStream.delete(key)
+    return true
+  }
+
+  /** Used on disconnect: abort every turn this device owned. */
+  private abortAllForDevice(deviceId: DeviceId, reason: string): void {
+    const prefix = `${deviceId}:`
+    for (const [key, controller] of this.inflightByStream.entries()) {
+      if (!key.startsWith(prefix)) continue
+      try {
+        controller.abort(reason)
+      } catch {
+        /* ignore */
+      }
+      this.inflightByStream.delete(key)
+    }
+  }
+
   closeAll(): void {
     for (const conn of this.byDevice.values()) {
       try {
@@ -110,5 +187,14 @@ export class ConnectionRegistry {
       }
     }
     this.byDevice.clear()
+    // Abort everything pending — server is going down, no point burning more.
+    for (const controller of this.inflightByStream.values()) {
+      try {
+        controller.abort('plugin shutting down')
+      } catch {
+        /* ignore */
+      }
+    }
+    this.inflightByStream.clear()
   }
 }

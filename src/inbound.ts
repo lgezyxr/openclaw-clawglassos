@@ -57,6 +57,12 @@ export interface InboundUserMessage {
   text: string
   /** True if `text` came from STT (rather than raw `text` frame). */
   fromVoice: boolean
+  /**
+   * Opaque stream identifier. For voice turns it's the client-chosen
+   * streamId from audio_start / voice frames. For raw text turns the
+   * caller invents one (we still want a key for the cancel registry).
+   */
+  streamId: string
 }
 
 const identity = defineStableChannelIngressIdentity({
@@ -210,6 +216,13 @@ export async function dispatchToOpenClaw(
     ctx.registry.send(msg.deviceId, { type: 'status', text: 'processing' })
   }, PROCESSING_HEARTBEAT_MS)
 
+  // Register an AbortController so the {type:'cancel'} frame handler can
+  // stop this turn mid-flight. The SDK plumbs replyOptions.abortSignal into
+  // the model client and tool fetches (web_search etc), so .abort() actually
+  // cancels upstream HTTP, not just our local listener.
+  const abortController = new AbortController()
+  ctx.registry.registerInflight(msg.deviceId, msg.streamId, abortController)
+
   try {
     await runtime.turn.runPrepared({
     channel: CHANNEL_ID,
@@ -225,6 +238,11 @@ export async function dispatchToOpenClaw(
         dispatcherOptions: {
           ...replyPipeline,
           deliver: async (payload: unknown) => {
+            // If the user cancelled mid-generation, suppress delivery. The
+            // model may have produced a partial buffered chunk before the
+            // abort propagated all the way down — emitting it now would
+            // bounce the client back into 'reply' against the user's wish.
+            if (abortController.signal.aborted) return
             const text =
               payload && typeof payload === 'object' && 'text' in payload
                 ? ((payload as { text?: string }).text ?? '')
@@ -238,12 +256,19 @@ export async function dispatchToOpenClaw(
             })
           },
           onError: (error: unknown) => {
+            // Aborts come through here as DOMException name=AbortError /
+            // 'aborted' messages. Don't surface those to the client — the
+            // client already drove the cancellation and switched to idle.
+            if (abortController.signal.aborted) return
             const message = error instanceof Error ? error.message : String(error)
             ctx.log?.error?.(`[clawglassos] dispatch error: ${message}`)
             ctx.registry.send(msg.deviceId, { type: 'error', text: message })
           },
         },
-        replyOptions: { onModelSelected },
+        replyOptions: {
+          onModelSelected,
+          abortSignal: abortController.signal,
+        },
       }),
     record: {
       onRecordError: (error: unknown) => {
@@ -252,8 +277,19 @@ export async function dispatchToOpenClaw(
       },
     },
   })
+  } catch (err) {
+    // The SDK can rethrow AbortError out of runPrepared depending on which
+    // tool was in flight. Swallow it — the client already moved on.
+    if (abortController.signal.aborted) {
+      ctx.log?.info?.(
+        `[clawglassos] turn aborted device=${msg.deviceId} stream=${msg.streamId}`,
+      )
+    } else {
+      throw err
+    }
   } finally {
     clearInterval(heartbeat)
+    ctx.registry.clearInflight(msg.deviceId, msg.streamId)
   }
 }
 

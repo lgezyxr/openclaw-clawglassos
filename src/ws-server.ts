@@ -243,6 +243,7 @@ async function handleTextFrame(
         deviceId: session.deviceId,
         text: transcript.text,
         fromVoice: true,
+        streamId: streamId ?? mintStreamId(),
       })
       return
     }
@@ -255,6 +256,7 @@ async function handleTextFrame(
         deviceId: session.deviceId,
         text: frame.text,
         fromVoice: false,
+        streamId: mintStreamId(),
       })
       return
     }
@@ -272,7 +274,28 @@ async function handleTextFrame(
         deviceId: session.deviceId,
         text,
         fromVoice: true,
+        streamId: frame.streamId ?? mintStreamId(),
       })
+      return
+    }
+    case 'cancel': {
+      if (!session.deviceId) {
+        ws.send(JSON.stringify({ type: 'error', text: 'no device id; send hello first' }))
+        return
+      }
+      // Look up the in-flight AbortController by streamId and fire it. The
+      // signal is wired through replyOptions.abortSignal in inbound.ts, so
+      // .abort() stops the model client + any tool fetches mid-call. If no
+      // match, we silently no-op — the turn already completed (race) or the
+      // streamId was bogus; either way nothing to do.
+      const aborted = registry.abortInflight(
+        session.deviceId,
+        frame.streamId,
+        'cancelled by client',
+      )
+      if (aborted) {
+        ws.send(JSON.stringify({ type: 'status', text: 'cancelled' }))
+      }
       return
     }
     case 'ping': {
@@ -306,4 +329,14 @@ function reject(
     `HTTP/1.1 ${status} ${reason}\r\nconnection: close\r\ncontent-length: 0\r\n\r\n`,
   )
   socket.destroy()
+}
+
+/**
+ * Used when the client didn't supply a streamId (raw `text` frames, or a
+ * `voice` frame from a buggy client). We always want a key so the cancel
+ * registry has something to look up, even if cancel for that turn is
+ * impractical (nobody knows the id but us).
+ */
+function mintStreamId(): string {
+  return `srv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
