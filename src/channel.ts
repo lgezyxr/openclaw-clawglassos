@@ -14,6 +14,7 @@ import type { OpenClawConfig } from 'openclaw/plugin-sdk/channel-core'
 import type { ConnectionRegistry } from './types.js'
 import type { ResolvedAccountConfig } from './inbound.js'
 import { startWsServer, type WsServerHandle } from './ws-server.js'
+import { azureWhisperProvider, stubSttProvider, type SttProvider } from './stt.js'
 
 interface BuildOptions {
   registry: ConnectionRegistry
@@ -112,6 +113,7 @@ export function buildChannelPlugin({ registry }: BuildOptions) {
           cfg: ctx.cfg,
           log: ctx.log,
         },
+        sttProvider: resolveSttProvider(section, ctx.log),
       })
 
       ctx.log?.info?.(
@@ -237,4 +239,46 @@ export function buildChannelPlugin({ registry }: BuildOptions) {
 
 function generateMessageId(): string {
   return `cgos-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+/**
+ * Pick an STT provider based on the channel config.
+ *
+ * Expected shape in openclaw.json:
+ *   channels.clawglassos.stt = {
+ *     provider: "azureWhisper",
+ *     azure: { endpoint, apiKey, deployment, apiVersion?, language? }
+ *   }
+ *
+ * Falls back to the stub provider when no config is present or when required
+ * Azure fields are missing -- we'd rather see "[voice message - ...]" land in
+ * the chat than break the entire dispatch pipeline because of a typo.
+ */
+function resolveSttProvider(
+  section: Record<string, any>,
+  log?: { info?: (msg: string) => void; warn?: (msg: string) => void },
+): SttProvider {
+  const stt = section?.stt as Record<string, any> | undefined
+  const provider = stt?.provider ?? 'stub'
+  if (provider === 'azureWhisper') {
+    const azure = stt?.azure as Record<string, any> | undefined
+    if (!azure?.endpoint || !azure?.apiKey || !azure?.deployment) {
+      log?.warn?.(
+        '[clawglassos] stt.provider=azureWhisper but azure.{endpoint,apiKey,deployment} missing; falling back to stub',
+      )
+      return stubSttProvider
+    }
+    log?.info?.(
+      `[clawglassos] stt provider = azureWhisper (deployment=${azure.deployment})`,
+    )
+    return azureWhisperProvider({
+      endpoint: azure.endpoint,
+      apiKey: azure.apiKey,
+      deployment: azure.deployment,
+      apiVersion: azure.apiVersion,
+      language: azure.language,
+    })
+  }
+  log?.info?.('[clawglassos] stt provider = stub')
+  return stubSttProvider
 }

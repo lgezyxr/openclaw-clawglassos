@@ -13,6 +13,7 @@ import {
   resolveChannelMessageIngress,
 } from 'openclaw/plugin-sdk/channel-ingress-runtime'
 import type { ConnectionRegistry, DeviceId } from './types.js'
+import { chooseReplyFormatRules } from './glasses-prompt.js'
 
 const CHANNEL_ID = 'clawglassos' as const
 
@@ -152,9 +153,22 @@ export async function dispatchToOpenClaw(
     body: msg.text,
   })
 
+  // Append the glasses display constraints to the message body the model
+  // actually reads. Per openclaw/src/auto-reply/reply/dispatch-acp.ts
+  // resolveAcpPromptText(), the agent picks the first non-empty of
+  // BodyForAgent → BodyForCommands → CommandBody → RawBody → Body, so we
+  // have to inject into BodyForAgent (not Body) for the rules to land.
+  //
+  // We append every turn (no channel-level systemPrompt hook today). A bit
+  // wasteful in tokens but bullet-proof against the model "forgetting" after
+  // a long conversation or context compaction. See glasses-prompt.ts for
+  // the rule set + rationale.
+  const formatRules = chooseReplyFormatRules(msg.text)
+  const bodyForAgent = `${msg.text}\n\n${formatRules}`
+
   const ctxPayload = runtime.reply.finalizeInboundContext({
     Body: body,
-    BodyForAgent: msg.text,
+    BodyForAgent: bodyForAgent,
     RawBody: msg.text,
     CommandBody: msg.text,
     From: target,
@@ -182,10 +196,22 @@ export async function dispatchToOpenClaw(
   })
 
   // 5. Push a transient "processing" status so the WebView UI can show a
-  //    spinner while the model is generating.
+  //    spinner while the model is generating, then keep heartbeating so the
+  //    client can detect when we silently die (network drop / process crash /
+  //    model wedged on a hung tool call). The frontend has a watchdog that
+  //    falls back to error after ~8s without a heartbeat (see AppContext).
+  //
+  //    Mirrors what extensions/discord does with Discord typing
+  //    (src/channels/typing.ts: 3s keepalive). We don't have a server-side TTL
+  //    primitive like Discord typing, so the frontend implements the TTL.
   ctx.registry.send(msg.deviceId, { type: 'status', text: 'processing' })
+  const PROCESSING_HEARTBEAT_MS = 3_000
+  const heartbeat = setInterval(() => {
+    ctx.registry.send(msg.deviceId, { type: 'status', text: 'processing' })
+  }, PROCESSING_HEARTBEAT_MS)
 
-  await runtime.turn.runPrepared({
+  try {
+    await runtime.turn.runPrepared({
     channel: CHANNEL_ID,
     accountId,
     routeSessionKey: route.sessionKey,
@@ -226,6 +252,9 @@ export async function dispatchToOpenClaw(
       },
     },
   })
+  } finally {
+    clearInterval(heartbeat)
+  }
 }
 
 function isAdmitted(decision: 'allow' | 'block' | 'pairing'): boolean {

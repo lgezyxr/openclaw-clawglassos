@@ -45,6 +45,30 @@
             "type": "string",
             "enum": ["open", "allowlist", "pairing"],
             "default": "allowlist"
+          },
+          "stt": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Server-side speech-to-text. When omitted the plugin emits stub transcripts (useful for the WebView-side STT path).",
+            "properties": {
+              "provider": {
+                "type": "string",
+                "enum": ["stub", "azureWhisper"],
+                "default": "stub"
+              },
+              "azure": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Required when provider = azureWhisper.",
+                "properties": {
+                  "endpoint": { "type": "string" },
+                  "apiKey": { "type": "string" },
+                  "deployment": { "type": "string" },
+                  "apiVersion": { "type": "string", "default": "2024-06-01" },
+                  "language": { "type": "string" }
+                }
+              }
+            }
           }
         }
       },
@@ -54,7 +78,8 @@
           "sensitive": true
         },
         "port": { "label": "WebSocket port" },
-        "path": { "label": "WebSocket path" }
+        "path": { "label": "WebSocket path" },
+        "stt.azure.apiKey": { "sensitive": true }
       }
     }
   }
